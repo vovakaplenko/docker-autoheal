@@ -1,4 +1,4 @@
-#!/usr/bin/env sh
+#!/bin/bash
 set -e
 
 DOCKER_SOCK=${DOCKER_SOCK:-/var/run/docker.sock}
@@ -15,6 +15,8 @@ docker_curl() {
 }
 
 trap 'kill ${!}; term_handler' SIGTERM
+
+echo "AUTOHEAL_CONTAINER_LABEL: $AUTOHEAL_CONTAINER_LABEL"
 
 if [ "$1" = 'autoheal' ] && [ -e ${DOCKER_SOCK} ]; then
   
@@ -39,19 +41,28 @@ if [ "$1" = 'autoheal' ] && [ -e ${DOCKER_SOCK} ]; then
 
     CONTAINERS=$(docker_curl -XGET http://localhost/containers/json | selector)
     for CONTAINER in $CONTAINERS; do
-      HEALTH=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json | jq -r .State.Health.Status)
+      CONTAINER_INFO=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json)
+      HEALTH=$(echo "$CONTAINER_INFO" | jq -r '.State | select(.Status == "running") | .Health.Status')
+      CONTAINER_NAME=$(echo "$CONTAINER_INFO" | jq -r .Name)
       if [ "unhealthy" = "$HEALTH" ]; then
         DATE=$(date +%d-%m-%Y" "%H:%M:%S)
-        CONTAINER_NAME=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json | jq -r .Name)
         echo "$DATE Container ${CONTAINER_NAME} (${CONTAINER:0:12}) found to be unhealthy"
-        touch "$TMP_DIR/$CONTAINER"
+        if [ ! -f "$TMP_DIR/$CONTAINER" ]; then
+          touch "$TMP_DIR/$CONTAINER"
+        fi
+        # echo "$CONTAINER_INFO" | jq .
+      else
+        if [ -f "$TMP_DIR/$CONTAINER" ]; then
+          rm "$TMP_DIR/$CONTAINER"
+        fi
       fi
     done
-    for CONTAINER in `ls $TMP_DIR`; do 
+    for CONTAINER in `find $TMP_DIR -type f -not -newermt '90 seconds' -printf '%P'`; do # TODO: 20 should become param
         DATE=$(date +%d-%m-%Y" "%H:%M:%S)
-        CONTAINER_NAME=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json | jq -r .Name)
+        CONTAINER_INFO=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json)
+        CONTAINER_NAME=$(echo "$CONTAINER_INFO" | jq -r 'select(.State.Status == "running" and .State.Health.Status == "unhealthy") | .Name')
         if [ "null" = "$CONTAINER_NAME" ]; then
-          echo "$DATE Delete container ${CONTAINER_NAME} (${CONTAINER:0:12}) from restart list because container name null implies container does not exist"
+          echo "$DATE Delete container ${CONTAINER_NAME} (${CONTAINER:0:12}) from restart list because container name null implies unhealthy container has not been found"
           rm "$TMP_DIR/$CONTAINER"
         else
           echo "$DATE Restarting container ${CONTAINER_NAME} (${CONTAINER:0:12})"
