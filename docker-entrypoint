@@ -4,6 +4,8 @@ set -e
 DOCKER_SOCK=${DOCKER_SOCK:-/var/run/docker.sock}
 TMP_DIR=/tmp/restart
 CURL_TIMEOUT=${CURL_TIMEOUT:-30}
+AUTOHEAL_RESTART_TIMEOUT="${AUTOHEAL_RESTART_TIMEOUT:-90}"  # Timeout in seconds before an unhealthy container restart
+# AUTOHEAL_INTERVAL can be set to change time between checks
 
 # SIGTERM-handler
 term_handler() {
@@ -56,11 +58,11 @@ if [ "$1" = 'autoheal' ] && [ -e ${DOCKER_SOCK} ]; then
         fi
       fi
     done
-    for CONTAINER in `find $TMP_DIR -type f -not -newermt '90 seconds' -printf '%P'`; do # TODO: 20 should become param
+    for CONTAINER in $(find $TMP_DIR -type f -not -newermt "$AUTOHEAL_RESTART_TIMEOUT seconds" -printf '%f\n'); do
         DATE=$(date +%d-%m-%Y" "%H:%M:%S)
         CONTAINER_INFO=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json)
         CONTAINER_NAME=$(echo "$CONTAINER_INFO" | jq -r 'select(.State.Status == "running" and .State.Health.Status == "unhealthy") | .Name')
-        if [ "null" = "$CONTAINER_NAME" ]; then
+        if [ "null" = "$CONTAINER_NAME" -o "" = "$CONTAINER_NAME" ]; then
           echo "$DATE Delete container ${CONTAINER_NAME} (${CONTAINER:0:12}) from restart list because container name null implies unhealthy container has not been found"
           rm "$TMP_DIR/$CONTAINER"
         else
