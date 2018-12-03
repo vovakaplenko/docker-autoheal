@@ -50,7 +50,6 @@ if [ "$1" = 'autoheal' ] && [ -e ${DOCKER_SOCK} ]; then
         if [ ! -f "$TMP_DIR/$CONTAINER" ]; then
           touch "$TMP_DIR/$CONTAINER"
         fi
-        # echo "$CONTAINER_INFO" | jq .
       else
         if [ -f "$TMP_DIR/$CONTAINER" ]; then
           rm "$TMP_DIR/$CONTAINER"
