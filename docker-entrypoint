@@ -58,7 +58,7 @@ if [ "$1" = 'autoheal' ] && [ -e ${DOCKER_SOCK} ]; then
         fi
       fi
     done
-    for CONTAINER in $(find $TMP_DIR -type f -not -newermt "$AUTOHEAL_RESTART_TIMEOUT seconds" -printf '%f\n'); do
+    for CONTAINER in $(find $TMP_DIR -type f -not -newermt "-$AUTOHEAL_RESTART_TIMEOUT seconds" -printf '%f\n'); do
         DATE=$(date +%d-%m-%Y" "%H:%M:%S)
         CONTAINER_INFO=$(docker_curl -XGET http://localhost/containers/${CONTAINER}/json)
         CONTAINER_NAME=$(echo "$CONTAINER_INFO" | jq -r 'select(.State.Status == "running" and .State.Health.Status == "unhealthy") | .Name')
